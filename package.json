@@ -1,12 +1,11 @@
 {
-  "name": "app",
+  "name": "finsim",
   "version": "1.0.0",
+  "description": "Personal Finance Simulator Game",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": ""
+  "author": "Sharan011",
+  "license": "MIT"
 }
