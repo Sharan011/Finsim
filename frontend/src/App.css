@@ -1,0 +1,118 @@
+body {
+  font-family: "Press Start 2P", monospace;
+  background: #dbeafe;
+}
+.game-main {
+  position: relative;
+  max-width: 900px;
+  margin: 0 auto;
+}
+.speech-bubble {
+  background: #fff;
+  border: 2px solid #222;
+  padding: 16px 24px;
+  border-radius: 24px;
+  margin: 16px;
+  font-size: 1.1em;
+  box-shadow: 0 4px 16px #5553;
+}
+.purse {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: #222;
+  color: #fff;
+  padding: 8px 20px;
+  border-radius: 16px;
+  font-size: 1.2em;
+  z-index: 10;
+}
+.purse.credit {
+  background: #27ae60;
+}
+.purse.debit {
+  background: #e74c3c;
+}
+.money-anim {
+  font-weight: bold;
+  margin-left: 10px;
+}
+.plus {
+  color: #27ae60;
+  animation: upAnim 0.8s;
+}
+.minus {
+  color: #e74c3c;
+  animation: downAnim 0.8s;
+}
+@keyframes upAnim {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes downAnim {
+  0% {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.building-map {
+  display: flex;
+  gap: 24px;
+  justify-content: center;
+  margin: 20px;
+}
+.building-btn {
+  background: #fff;
+  border: 2px solid #222;
+  border-radius: 18px;
+  padding: 8px;
+  cursor: pointer;
+}
+.building-btn img {
+  display: block;
+  margin: 0 auto;
+}
+.character {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.character .emoji {
+  font-size: 2.2em;
+  position: absolute;
+  top: -32px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.animation-layer {
+  position: absolute;
+  top: 15%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 2em;
+  opacity: 0.2;
+  pointer-events: none;
+}
+.player-intro {
+  max-width: 400px;
+  margin: 80px auto;
+  background: #fff8;
+  border-radius: 20px;
+  padding: 32px 24px;
+}
+.player-intro form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
