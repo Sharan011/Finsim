@@ -1,46 +1,88 @@
 import React from "react";
-const buildings = [
-  { id: "home", label: "Home", img: "/buildings/home.png" },
-  { id: "work", label: "Work (MNC)", img: "/buildings/work.png" },
-  { id: "gym", label: "Planet Fitness", img: "/buildings/gym.png" },
-  { id: "pub", label: "Downtown Pub", img: "/buildings/pub.png" },
-  { id: "cn-tower", label: "CN Tower", img: "/buildings/cn-tower.png" },
+
+const menuItems = [
+  {
+    id: "home",
+    label: "Home",
+    img: "/buildings/home.png",
+    style: { left: "23%", top: "78%" },
+  },
+  {
+    id: "work",
+    label: "Work (MNC)",
+    img: "/buildings/work.png",
+    style: { left: "60%", top: "89%" },
+  },
+  {
+    id: "gym",
+    label: "Planet Fitness",
+    img: "/buildings/gym.png",
+    style: { left: "74%", top: "62%" },
+  },
+  {
+    id: "pub",
+    label: "Downtown Pub",
+    img: "/buildings/pub.png",
+    style: { left: "69%", top: "35%" },
+  },
+  {
+    id: "cn-tower",
+    label: "CN Tower",
+    img: "/buildings/cn-tower.png",
+    style: { left: "60.5%", top: "43%" },
+  },
 ];
-export default function BuildingMap({ current, onSelect, dayCount, phase }) {
-  // Only show relevant buildings based on phase
-  let visible = ["home"];
-  if (phase === "choose-start")
-    visible = ["home", "work", "gym", "pub", "cn-tower"];
-  else if (phase === "choose-gym-study") visible = ["gym", "study"];
-  else if (phase === "choose-activity") visible = ["study", "cn-tower", "pub"];
-  else if (phase === "evening-choice") visible = ["home", "cn-tower", "pub"];
+
+const playClick = () => {
+  const audio = new window.Audio("/assets/click.mp3");
+  audio.volume = 0.5;
+  audio.play().catch(() => {});
+};
+
+export default function BuildingMenuScene({ player }) {
   return (
-    <div className="building-map">
-      {buildings
-        .filter(
-          (b) =>
-            visible.includes(b.id) || visible.includes(b.label.toLowerCase())
-        )
-        .map((b) => (
-          <button
-            key={b.id}
-            className="building-btn"
-            onClick={() => onSelect && onSelect(b.id)}
-            disabled={!onSelect}
-          >
-            <img src={b.img} alt={b.label} style={{ width: 80, height: 80 }} />
-            <span>{b.label}</span>
-          </button>
-        ))}
-      {/* Show study as a book icon */}
-      {visible.includes("study") && (
-        <button className="building-btn" onClick={() => onSelect("study")}>
-          <span role="img" aria-label="study" style={{ fontSize: 48 }}>
-            📚
-          </span>
-          <span>Study</span>
+    <div className="menu-bg-full">
+      <img
+        src="/buildings/menu.jpg"
+        alt="Toronto aerial"
+        className="menu-bg-img"
+      />
+      {/* Player intro bubble */}
+      <div className="player-intro-bubble">
+        <img
+          src={player?.characterImg || "/assets/char-male.png"}
+          alt={player?.character || "Player"}
+          className="player-menu-avatar"
+        />
+        <div className="bubble-content">
+          <div className="player-name">{player?.name || "Player"}</div>
+          <div className="player-age">
+            {player?.age ? `Age: ${player.age}` : ""}
+          </div>
+          <div className="player-character">
+            {player?.character ? `Character: ${player.character}` : ""}
+          </div>
+        </div>
+        <div className="bubble-pointer"></div>
+      </div>
+      {/* Speech bubble for menu */}
+      <div className="choose-place-bubble">
+        Alright, now it’s time to choose the place you want to head to
+        <div className="bubble-pointer2"></div>
+      </div>
+
+      {/* Menu items */}
+      {menuItems.map((item) => (
+        <button
+          key={item.id}
+          className="menu-item-btn"
+          style={item.style}
+          onClick={playClick}
+        >
+          <img src={item.img} alt={item.label} />
+          <span>{item.label}</span>
         </button>
-      )}
+      ))}
     </div>
   );
 }

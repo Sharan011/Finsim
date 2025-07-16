@@ -1,21 +1,61 @@
-import React, { useState, useEffect } from "react";
-import PlayerIntro from "./PlayerIntro";
-import BuildingMap from "./BuildingMap";
-import SpeechBubble from "./SpeechBubble";
-import Purse from "./Purse";
-import Character from "./Character";
-import AnimationLayer from "./AnimationLayer";
-import { playSound } from "../sounds";
-import {
-  getESTDate,
-  getWeekday,
-  getTimeString,
-  getRandom,
-  getRandomCost,
-} from "../utils";
+import React, { useState } from "react";
+import "../App.css";
 
+// --- DATA ---
 const INIT_PURSE = 500;
+const INIT_HAPPINESS = 50;
 const WORK_PAY = 500;
+const FADE_DURATION = 1500;
+const BUBBLE_DELAY = 1200;
+const BUBBLE_DURATION = 2500;
+
+const WEEKDAYS = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
+
+const PLACES = [
+  {
+    id: "home",
+    label: "Home",
+    bg: "/buildings/home.jpg",
+    img: "/buildings/home.png",
+    style: { left: "10%", top: "75%" },
+  },
+  {
+    id: "work",
+    label: "Work (MNC)",
+    bg: "/buildings/work.jpg",
+    img: "/buildings/work.png",
+    style: { left: "70%", top: "80%" },
+  },
+  {
+    id: "gym",
+    label: "Planet Fitness",
+    bg: "/buildings/gym-bg.jpg",
+    img: "/buildings/gym.png",
+    style: { left: "83%", top: "55%" },
+  },
+  {
+    id: "pub",
+    label: "Downtown Pub",
+    bg: "/buildings/pub.jpg",
+    img: "/buildings/pub.png",
+    style: { left: "66%", top: "22%" },
+  },
+  {
+    id: "cn-tower",
+    label: "CN Tower",
+    bg: "/buildings/cn-tower.jpg",
+    img: "/buildings/cn-tower.png",
+    style: { left: "52%", top: "38%" },
+  },
+];
 
 const MOTIVATIONAL_QUOTES = [
   "Success is no accident.",
@@ -23,238 +63,485 @@ const MOTIVATIONAL_QUOTES = [
   "Don’t watch the clock; do what it does. Keep going.",
   "Hard work pays off.",
   "Great things never come from comfort zones.",
+  "Monday is a fresh start, let’s make it count!",
+  "Let’s crush it at work today!",
 ];
+const HOME_QUOTES = [
+  "Home sweet home, the best place to be!",
+  "There's no place like home.",
+  "Rest well, tomorrow's a new day!",
+  "Nighty night! Recharging for new adventures.",
+];
+const MORNING_QUOTES = [
+  "Wakey wakey! Time to shine.",
+  "Rise & shine, it's a new day! 🥞",
+  "Breakfast time! Let's get ready for work.",
+  "Good morning! Ready for a new week?",
+];
+const EXERCISE_DAYS = ["Leg Day", "Lat Day", "Chest Day", "Arms Day", "Cardio"];
+
+function getRandom(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+function playSound(type) {
+  let url = "";
+  if (type === "click") url = "/sounds/click.mp3";
+  if (type === "credit") url = "/sounds/credit.mp3";
+  if (type === "debit") url = "/sounds/debit.mp3";
+  if (url) {
+    const audio = new window.Audio(url);
+    audio.volume = 0.5;
+    audio.play().catch(() => {});
+  }
+}
+
+// Time helpers
+function getTimeParts(timeStr) {
+  const [hour, min] = timeStr.split(":").map(Number);
+  return { hour, min };
+}
+function pad(n) {
+  return n < 10 ? "0" + n : "" + n;
+}
+function addMinutes(timeStr, mins) {
+  let { hour, min } = getTimeParts(timeStr);
+  min += mins;
+  while (min >= 60) {
+    min -= 60;
+    hour++;
+  }
+  while (hour >= 24) {
+    hour -= 24;
+  }
+  return pad(hour) + ":" + pad(min);
+}
+function nextWeekday(current) {
+  const idx = WEEKDAYS.indexOf(current);
+  return WEEKDAYS[(idx + 1) % 7];
+}
+function menuEnabled(item, hour, weekday) {
+  const isWeekend = weekday === "Saturday" || weekday === "Sunday";
+  if (isWeekend && weekday === "Sunday" && hour < 8 && item.id !== "home")
+    return false;
+  if (isWeekend && item.id === "work") return false;
+  if (!isWeekend && (hour < 8 || hour >= 21) && item.id !== "home")
+    return false;
+  if (!isWeekend && hour >= 8 && hour < 18 && item.id !== "work") return false;
+  if (!isWeekend && hour >= 18 && hour < 21 && item.id === "work") return false;
+  return true;
+}
 
 export default function Game() {
-  // Game States
-  const [player, setPlayer] = useState(null);
+  // --- Player Setup State ---
+  const [playerSetup, setPlayerSetup] = useState({
+    name: "",
+    age: "",
+    gender: "male",
+  });
+  const [playerReady, setPlayerReady] = useState(false);
+
+  // --- Game State ---
+  const [location, setLocation] = useState("menu");
+  const [sceneFade, setSceneFade] = useState("scene-fade-in");
+  const [bubbleVisible, setBubbleVisible] = useState(true);
+  const [speech, setSpeech] = useState("Choose a place to go!");
   const [purse, setPurse] = useState(INIT_PURSE);
-  const [location, setLocation] = useState("home"); // home, work, gym, pub, cn-tower
-  const [time, setTime] = useState(getESTDate());
-  const [activity, setActivity] = useState(""); // sleep, work, gym, pub, sightseeing, etc.
-  const [speech, setSpeech] = useState("");
-  const [weekday, setWeekday] = useState(getWeekday(time));
-  const [gamePhase, setGamePhase] = useState("intro"); // intro, day, sleep, end
-  const [dayCount, setDayCount] = useState(1); // 1=Monday
-  const [weekCount, setWeekCount] = useState(1);
-  const [purseAnim, setPurseAnim] = useState(null); // 'credit'/'debit'
-  const [showChoice, setShowChoice] = useState(false);
-  const [gameResult, setGameResult] = useState(null); // null, 'win', 'lose'
+  const [purseAnim, setPurseAnim] = useState(null);
+  const [player, setPlayer] = useState({
+    name: "",
+    age: "",
+    gender: "male",
+    happiness: INIT_HAPPINESS,
+  });
+  const [weekday, setWeekday] = useState("Wednesday");
+  const [timeStr, setTimeStr] = useState("08:30");
 
-  // --- Time management ---
-  // Sync time to EST, update on new day
-  useEffect(() => {
-    setWeekday(getWeekday(time));
-  }, [time]);
-
-  // --- On player intro complete ---
-  function handlePlayerIntro(playerObj) {
-    setPlayer(playerObj);
-    setSpeech(
-      `Hi, I'm ${playerObj.name}, a ${playerObj.age}-year-old ${
-        playerObj.gender
-      }. Today is ${weekday}, ${getTimeString(time)} (EST).`
-    );
-    setTimeout(() => setGamePhase("choose-start"), 3000);
-  }
-
-  // --- Main game day flow ---
-  useEffect(() => {
-    if (gamePhase === "choose-start") {
-      setShowChoice(true);
-      setSpeech("Choose your starting building for today!");
-    }
-    if (gamePhase === "sleep") {
-      setActivity("sleep");
-      setSpeech("Sleeping ... Zzz");
-      playSound("bgm");
-      setTimeout(() => {
-        setActivity("wake");
-        setSpeech("Good morning! It's a new day.");
-        setTime(getESTDate(7, 0, weekCount, dayCount + 1)); // Next day, 7:00 am
-        setDayCount((prev) => (prev < 7 ? prev + 1 : 1));
-        setTimeout(() => {
-          setGamePhase("breakfast");
-          setActivity("breakfast");
-          setSpeech("Had breakfast. Ready for the day! Time: 8:30am (EST)");
-          setTime(getESTDate(8, 30, weekCount, dayCount));
-          setTimeout(() => {
-            if (dayCount <= 5) setGamePhase("work-commute");
-            else setGamePhase("choose-activity");
-          }, 2000);
-        }, 1500);
-      }, 3000);
-    }
-    if (gamePhase === "work-commute") {
-      setLocation("work");
-      setActivity("commute");
-      setSpeech("Heading to work...");
-      playSound("debit");
-      deductGas();
-      setTimeout(() => {
-        setActivity("work");
-        setSpeech(`Working hard! "${getRandom(MOTIVATIONAL_QUOTES)}"`);
-        playSound("bgm");
-        setTimeout(() => {
-          handleMoney(WORK_PAY, "credit");
-          setSpeech("Work day complete! +$500. Time: 5:00pm (EST)");
-          setTime(getESTDate(17, 0, weekCount, dayCount));
-          setGamePhase("choose-gym-study");
-        }, 3000);
-      }, 1500);
-    }
-    if (gamePhase === "choose-gym-study") {
-      setShowChoice(true);
-      setSpeech("After work, do you want to go to the gym or study?");
-    }
-    if (gamePhase === "choose-activity") {
-      setShowChoice(true);
-      setSpeech("What will you do today? (study / cn tower / pub)");
-    }
-    if (gamePhase === "evening-choice") {
-      setShowChoice(true);
-      setSpeech("It's evening! Go home, visit the CN Tower, or go to the pub?");
-    }
-    if (gamePhase === "end-week") {
-      setGamePhase("end");
-      if (purse >= 2000) {
-        setGameResult("win");
-        setSpeech("Congratulations! You finished with great savings. You won!");
-        playSound("win");
-      } else {
-        setGameResult("lose");
-        setSpeech("Game over. Try to manage your spending better next time.");
-        playSound("gameover");
-      }
-    }
-  }, [gamePhase]);
-
-  // --- Helper logic ---
-  function handleMoney(amount, type) {
-    setPurse((p) => {
-      setPurseAnim(type);
-      setTimeout(() => setPurseAnim(null), 1000);
-      playSound(type === "credit" ? "credit" : "debit");
-      return type === "credit" ? p + amount : p - amount;
+  // Setup form submit
+  function handlePlayerSetup(e) {
+    e.preventDefault();
+    setPlayer({
+      name: playerSetup.name,
+      age: playerSetup.age,
+      gender: playerSetup.gender,
+      happiness: INIT_HAPPINESS,
     });
-  }
-  function deductGas() {
-    const gasCost = getRandomCost(4, 6);
-    handleMoney(gasCost, "debit");
-    setSpeech(`Car gas today cost $${gasCost}.`);
+    setPlayerReady(true);
+    setSpeech(`Hi ${playerSetup.name}, choose a place to go!`);
   }
 
-  // --- Building click logic ---
-  function handleBuildingSelect(target) {
-    setShowChoice(false);
-    if (gamePhase === "choose-start") {
-      setLocation(target);
-      // If night, sleep logic
-      const hour = time.getHours();
-      if (hour >= 23 || hour < 5) {
-        setGamePhase("sleep");
-        return;
-      }
-      setSpeech("Let's start the day!");
-      if (target === "home") setGamePhase("sleep");
-      else if (target === "work" && dayCount <= 5) setGamePhase("work-commute");
-      else setGamePhase("choose-activity");
-    } else if (gamePhase === "choose-gym-study") {
-      if (target === "gym") {
-        setLocation("gym");
-        const gymCost = getRandomCost(10, 20);
-        handleMoney(gymCost, "debit");
-        setActivity("gym");
-        setSpeech(`Preworkout & gas: $${gymCost}. Let's get those gains!`);
-        setTimeout(() => setGamePhase("evening-choice"), 1500);
-      } else if (target === "study") {
-        handleMoney(10, "debit");
-        setActivity("study");
-        setSpeech("Hit the books!");
-        setTimeout(() => setGamePhase("evening-choice"), 1500);
-      }
-    } else if (gamePhase === "choose-activity") {
-      if (target === "study") {
-        handleMoney(10, "debit");
-        setActivity("study");
-        setSpeech("A productive day studying!");
-        setTimeout(() => setGamePhase("evening-choice"), 1500);
-      } else if (target === "cn-tower") {
-        setLocation("cn-tower");
-        handleMoney(30, "debit");
-        setActivity("sightseeing");
-        setSpeech(
-          "Enjoying CN Tower! Next time, I'll explore even more. Worth it!"
-        );
-        setTimeout(() => setGamePhase("evening-choice"), 1500);
-      } else if (target === "pub") {
-        setLocation("pub");
-        const pubCost =
-          dayCount === 5 || dayCount === 6
-            ? getRandomCost(40, 70)
-            : getRandomCost(15, 25);
-        handleMoney(pubCost, "debit");
-        setActivity("pub");
-        setSpeech("Having a blast at the pub! I love this vibe and music.");
-        setTimeout(() => setGamePhase("evening-choice"), 1500);
-      }
-    } else if (gamePhase === "evening-choice") {
-      if (target === "home") {
-        deductGas();
-        setActivity("night");
-        setSpeech(
-          `What a wonderful day! Can't wait for tomorrow. Final purse: $${purse}`
-        );
-        setTimeout(() => {
-          if (dayCount === 6) setGamePhase("end-week");
-          else setGamePhase("sleep");
-        }, 2000);
-      } else if (target === "cn-tower") {
-        handleMoney(30, "debit");
-        setActivity("sightseeing");
-        setSpeech("Evening at CN Tower. Amazing city lights!");
-        setTimeout(() => handleBuildingSelect("home"), 1500);
-      } else if (target === "pub") {
-        const pubCost =
-          dayCount === 5 || dayCount === 6
-            ? getRandomCost(40, 70)
-            : getRandomCost(15, 25);
-        handleMoney(pubCost, "debit");
-        setActivity("pub");
-        setSpeech("Enjoying the night at the pub with friends.");
-        setTimeout(() => handleBuildingSelect("home"), 1500);
-      }
-    }
+  function animatePurse(type) {
+    setPurseAnim(type);
+    setTimeout(() => setPurseAnim(null), 1000);
+  }
+  function creditMoney(val) {
+    setPurse((p) => p + val);
+    animatePurse("credit");
+    playSound("credit");
+  }
+  function debitMoney(val) {
+    setPurse((p) => p - val);
+    animatePurse("debit");
+    playSound("debit");
   }
 
-  // --- Render ---
-  if (gamePhase === "intro")
-    return <PlayerIntro onComplete={handlePlayerIntro} />;
-  if (gamePhase === "end")
-    return (
-      <div>
-        <h2>{gameResult === "win" ? "You Win!" : "Game Over"}</h2>
-        <p>Your final balance: ${purse}</p>
-      </div>
-    );
-
-  return (
-    <div className="game-main">
-      <Purse amount={purse} anim={purseAnim} />
-      <SpeechBubble>{speech}</SpeechBubble>
-      <Character
-        gender={player?.gender}
-        activity={activity}
-        location={location}
-        time={time}
-      />
-      <BuildingMap
-        current={location}
-        onSelect={showChoice ? handleBuildingSelect : null}
-        dayCount={dayCount}
-        phase={gamePhase}
-      />
-      <AnimationLayer activity={activity} />
+  // Status bar
+  const statusBar = (
+    <div className="menu-status-bar">
+      <span>
+        <b>{weekday}</b>
+      </span>
+      <span>
+        <b>{timeStr} (EST)</b>
+      </span>
+      <span className={`menu-purse${purseAnim ? " purse-" + purseAnim : ""}`}>
+        <b>
+          <span role="img" aria-label="money">
+            💰
+          </span>{" "}
+          ${purse}
+        </b>
+      </span>
+      <span className="menu-happiness">
+        <b>😊 {player.happiness}%</b>
+      </span>
     </div>
   );
+
+  // -- Main Transition Logic --
+  function handlePlace(id) {
+    playSound("click");
+    setSceneFade("scene-fade-out");
+    setBubbleVisible(false);
+
+    setTimeout(() => {
+      setLocation(id);
+      setSceneFade("scene-fade-in");
+
+      let bubbleMsg = "";
+      let updateFn = () => {};
+
+      // Special logic for "home" - night and then morning transition
+      if (id === "home") {
+        // NIGHT: show night quote, set to 22:00
+        setTimeout(() => {
+          setBubbleVisible(true);
+          setSpeech(getRandom(HOME_QUOTES));
+          setTimeStr("22:00");
+          // After night bubble, fade out, then show morning bubble
+          setTimeout(() => {
+            setBubbleVisible(false);
+            setSceneFade("scene-fade-out");
+            setTimeout(() => {
+              setSceneFade("scene-fade-in");
+              setBubbleVisible(true);
+              setSpeech(getRandom(MORNING_QUOTES));
+              setWeekday(nextWeekday(weekday));
+              setTimeStr("07:00");
+              // After morning bubble, back to menu
+              setTimeout(() => {
+                setBubbleVisible(false);
+                setSceneFade("scene-fade-out");
+                setTimeout(() => {
+                  setLocation("menu");
+                  setSceneFade("scene-fade-in");
+                  setBubbleVisible(true);
+                  setSpeech(`Hi ${player.name}, choose a place to go!`);
+                }, FADE_DURATION);
+              }, BUBBLE_DURATION);
+            }, FADE_DURATION);
+          }, BUBBLE_DURATION);
+        }, BUBBLE_DELAY);
+        return; // "home" handled, return early
+      }
+
+      // All other places
+      if (id === "work") {
+        bubbleMsg =
+          getRandom(MOTIVATIONAL_QUOTES) + " Today's wages: $500 credited!";
+        updateFn = () => {
+          creditMoney(WORK_PAY);
+          setTimeStr("18:00");
+        };
+      } else if (id === "gym") {
+        const gasCost = getRandom([4, 5, 6]);
+        const gymFee = getRandom([10, 12, 15, 18, 20]);
+        bubbleMsg = `${getRandom(MOTIVATIONAL_QUOTES)} (${getRandom(
+          EXERCISE_DAYS
+        )})\nGas: $${gasCost}, Gym: $${gymFee}`;
+        updateFn = () => {
+          debitMoney(gasCost);
+          debitMoney(gymFee);
+          setTimeStr(addMinutes(timeStr, 90));
+        };
+      } else if (id === "pub") {
+        const pubCost = getRandom([20, 25, 30, 35, 40]);
+        bubbleMsg = "Enjoying the night at the pub with friends.";
+        updateFn = () => {
+          debitMoney(pubCost);
+          setTimeStr(addMinutes(timeStr, 120));
+        };
+      } else if (id === "cn-tower") {
+        bubbleMsg = "Exploring CN Tower! The city looks amazing from up here.";
+        updateFn = () => {
+          debitMoney(30);
+          setTimeStr(addMinutes(timeStr, 60));
+        };
+      }
+
+      setTimeout(() => {
+        setBubbleVisible(true);
+        setSpeech(bubbleMsg);
+
+        setTimeout(() => {
+          updateFn();
+
+          setTimeout(() => {
+            setBubbleVisible(false);
+            setSceneFade("scene-fade-out");
+
+            setTimeout(() => {
+              setLocation("menu");
+              setSceneFade("scene-fade-in");
+              setBubbleVisible(true);
+              setSpeech(`Hi ${player.name}, choose a place to go!`);
+            }, FADE_DURATION);
+          }, 1000);
+        }, BUBBLE_DURATION);
+      }, BUBBLE_DELAY);
+    }, FADE_DURATION);
+  }
+
+  const { hour } = getTimeParts(timeStr);
+
+  // --- Player Setup Form (before menu) ---
+  if (!playerReady) {
+    return (
+      <div className="player-setup-bg">
+        <img
+          src="/buildings/game.jpg"
+          alt="Background"
+          className="player-setup-bgimg"
+        />
+        <form
+          className="player-setup-form transparent"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (
+              playerSetup.name.trim().length > 0 &&
+              playerSetup.age &&
+              Number(playerSetup.age) > 18 &&
+              playerSetup.gender
+            ) {
+              handlePlayerSetup(e);
+            }
+          }}
+          autoComplete="off"
+        >
+          <h2 className="player-setup-title">
+            Welcome, to FinSim....save money live better!!!!
+          </h2>
+          <label className="player-setup-label">
+            Name:
+            <input
+              required
+              className="player-setup-input"
+              value={playerSetup.name}
+              onChange={(e) =>
+                setPlayerSetup((s) => ({ ...s, name: e.target.value }))
+              }
+              placeholder="Enter your name"
+              autoFocus
+            />
+          </label>
+          <label className="player-setup-label">
+            Age:
+            <input
+              required
+              className="player-setup-input"
+              type="number"
+              min={19}
+              value={playerSetup.age}
+              onBlur={(e) =>
+                setPlayerSetup((s) => ({ ...s, ageTouched: true }))
+              }
+              onChange={(e) =>
+                setPlayerSetup((s) => ({
+                  ...s,
+                  age: e.target.value.replace(/[^0-9]/g, ""),
+                }))
+              }
+              placeholder="Must be above 18"
+            />
+            {playerSetup.ageTouched &&
+              playerSetup.age &&
+              Number(playerSetup.age) <= 18 && (
+                <span className="player-setup-age-error">
+                  Age must be strictly above 18.
+                </span>
+              )}
+          </label>
+          <div className="player-setup-label" style={{ marginBottom: 8 }}>
+            Gender:
+            <div className="player-setup-gender-row">
+              <div
+                className={`player-setup-gender-block${
+                  playerSetup.gender === "male" ? " selected" : ""
+                }`}
+                onClick={() =>
+                  setPlayerSetup((s) => ({ ...s, gender: "male" }))
+                }
+                tabIndex={0}
+                role="button"
+                aria-label="Male"
+              >
+                <img
+                  src="/assets/char-male.png"
+                  alt="Male"
+                  className="player-setup-gender-img"
+                />
+                <span className="player-setup-gender-label">Male</span>
+              </div>
+              <div
+                className={`player-setup-gender-block${
+                  playerSetup.gender === "female" ? " selected" : ""
+                }`}
+                onClick={() =>
+                  setPlayerSetup((s) => ({ ...s, gender: "female" }))
+                }
+                tabIndex={0}
+                role="button"
+                aria-label="Female"
+              >
+                <img
+                  src="/assets/char-female.png"
+                  alt="Female"
+                  className="player-setup-gender-img"
+                />
+                <span className="player-setup-gender-label">Female</span>
+              </div>
+              <div
+                className={`player-setup-gender-block${
+                  playerSetup.gender === "other" ? " selected" : ""
+                }`}
+                onClick={() =>
+                  setPlayerSetup((s) => ({ ...s, gender: "other" }))
+                }
+                tabIndex={0}
+                role="button"
+                aria-label="Other"
+              >
+                <img
+                  src="/assets/char-other.png"
+                  alt="Other"
+                  className="player-setup-gender-img"
+                />
+                <span className="player-setup-gender-label">Other</span>
+              </div>
+            </div>
+          </div>
+          <button
+            type="submit"
+            className="player-setup-btn"
+            disabled={
+              !(
+                playerSetup.name.trim().length > 0 &&
+                playerSetup.age &&
+                Number(playerSetup.age) > 18 &&
+                playerSetup.gender
+              )
+            }
+          >
+            Start Game
+          </button>
+          <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Montserrat:wght@400;700&display=swap"
+            rel="stylesheet"
+          />
+        </form>
+      </div>
+    );
+  }
+
+  // --- Main Scenes ---
+  if (location === "menu") {
+    return (
+      <div className={`menu-scene-container fullscreen ${sceneFade}`}>
+        <img src="/buildings/menu.jpg" alt="City" className="menu-scene-bg" />
+        {statusBar}
+        <div
+          className={`bubble-msg ${
+            bubbleVisible ? "bubble-fade-in" : "bubble-fade-out"
+          }`}
+        >
+          {speech}
+        </div>
+        <div className="menu-player-bubble">
+          <img
+            src={
+              player.gender === "female"
+                ? "/assets/char-female.png"
+                : "/assets/char-male.png"
+            }
+            alt={player.gender}
+            className="menu-player-img"
+          />
+          <div>
+            <div className="player-name">{player.name}</div>
+            <div>Age: {player.age}</div>
+            <div>Character: {player.gender}</div>
+          </div>
+        </div>
+        {PLACES.map((item) => (
+          <button
+            key={item.id}
+            className={`menu-item-btn${
+              !menuEnabled(item, hour, weekday) ? " menu-item-disabled" : ""
+            }`}
+            style={item.style}
+            onClick={
+              menuEnabled(item, hour, weekday)
+                ? () => handlePlace(item.id)
+                : undefined
+            }
+            aria-label={item.label}
+            disabled={!menuEnabled(item, hour, weekday)}
+          >
+            <img src={item.img} alt={item.label} />
+            <span>{item.label}</span>
+          </button>
+        ))}
+      </div>
+    );
+  } else {
+    const place = PLACES.find((p) => p.id === location);
+    return (
+      <div className={`menu-scene-container fullscreen ${sceneFade}`}>
+        <img src={place.bg} alt={place.label} className="menu-scene-bg" />
+        {statusBar}
+        <div
+          className={`bubble-msg ${
+            bubbleVisible ? "bubble-fade-in" : "bubble-fade-out"
+          }`}
+        >
+          {speech}
+        </div>
+        <div className="menu-player-bubble">
+          <img
+            src={
+              player.gender === "female"
+                ? "/assets/char-female.png"
+                : "/assets/char-male.png"
+            }
+            alt={player.gender}
+            className="menu-player-img"
+          />
+          <div>
+            <div className="player-name">{player.name}</div>
+            <div>Age: {player.age}</div>
+            <div>Character: {player.gender}</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 }

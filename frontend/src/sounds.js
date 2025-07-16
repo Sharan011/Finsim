@@ -1,3 +1,5 @@
+import { useRef, useEffect } from "react";
+
 const sounds = {
   bgm: "/assets/bgm.mp3",
   click: "/assets/click.mp3",
@@ -6,8 +8,25 @@ const sounds = {
   win: "/assets/win.mp3",
   gameover: "/assets/gameover.mp3",
 };
-export function playSound(name) {
-  const audio = new Audio(sounds[name]);
-  audio.volume = name === "bgm" ? 0.2 : 1.0;
-  audio.play();
+
+export function useBackgroundMusic(url) {
+  const musicRef = useRef();
+  useEffect(() => {
+    function startMusic() {
+      if (!musicRef.current) {
+        musicRef.current = new window.Audio(url);
+        musicRef.current.loop = true;
+        musicRef.current.volume = 0.15;
+        musicRef.current.play().catch(() => {});
+      }
+    }
+    window.addEventListener("click", startMusic, { once: true });
+    return () => {
+      window.removeEventListener("click", startMusic);
+      if (musicRef.current) {
+        musicRef.current.pause();
+        musicRef.current = null;
+      }
+    };
+  }, [url]);
 }
