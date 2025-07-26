@@ -2,12 +2,20 @@ import React, { useState } from "react";
 import "../App.css";
 
 // --- DATA ---
-const INIT_PURSE = 500;
+const INIT_PURSE = 400; // Reduced starting money to make it more challenging
 const INIT_HAPPINESS = 50;
-const WORK_PAY = 500;
+const WORK_PAY = 300; // Reduced base pay to balance the economy
 const FADE_DURATION = 1500;
 const BUBBLE_DELAY = 1200;
 const BUBBLE_DURATION = 2500;
+
+// Game Over/Win Conditions - Made more achievable
+const BANKRUPTCY_THRESHOLD = 0;
+const MIN_HAPPINESS = 0;
+const WIN_MONEY_TARGET = 3000; // Reduced from 5000 to make it achievable
+const WIN_HAPPINESS_TARGET = 80; // Reduced from 90 to make it achievable
+const DAILY_RENT = 30; // Reduced from 50 to give more breathing room
+const MAX_DAYS_TO_WIN = 21; // 3 weeks to achieve the goal
 
 const WEEKDAYS = [
   "Monday",
@@ -23,37 +31,44 @@ const PLACES = [
   {
     id: "home",
     label: "Home",
-    bg: "/buildings/home.jpg",
+    bg: "/buildings/home.png",
     img: "/buildings/home.png",
-    style: { left: "10%", top: "75%" },
+    style: { left: "50%", top: "75%" },
   },
   {
     id: "work",
     label: "Work (MNC)",
-    bg: "/buildings/work.jpg",
+    bg: "/buildings/work.png",
     img: "/buildings/work.png",
-    style: { left: "70%", top: "80%" },
+    style: { left: "45%", top: "10%" },
   },
   {
     id: "gym",
     label: "Planet Fitness",
-    bg: "/buildings/gym-bg.jpg",
+    bg: "/buildings/gym.png",
     img: "/buildings/gym.png",
-    style: { left: "83%", top: "55%" },
+    style: { left: "14%", bottom: "10%" },
   },
   {
     id: "pub",
     label: "Downtown Pub",
-    bg: "/buildings/pub.jpg",
+    bg: "/buildings/pub.png",
     img: "/buildings/pub.png",
-    style: { left: "66%", top: "22%" },
+    style: { left: "75%", top: "20%" },
   },
   {
     id: "cn-tower",
     label: "CN Tower",
-    bg: "/buildings/cn-tower.jpg",
+    bg: "/buildings/cn-tower.png",
     img: "/buildings/cn-tower.png",
-    style: { left: "52%", top: "38%" },
+    style: { left: "63%", bottom: "50%" },
+  },
+  {
+    id: "mall",
+    label: "Westfield Mall",
+    bg: "/buildings/menu.jpg", // Using menu background as placeholder
+    img: "/buildings/home.png", // Using home icon as placeholder
+    style: { left: "80%", bottom: "35%" },
   },
 ];
 
@@ -80,14 +95,68 @@ const MORNING_QUOTES = [
 ];
 const EXERCISE_DAYS = ["Leg Day", "Lat Day", "Chest Day", "Arms Day", "Cardio"];
 
+// Random Events - Balanced for new economy
+const RANDOM_EVENTS = [
+  {
+    type: "bonus",
+    message: "Great performance! Your boss gave you a $150 bonus!",
+    amount: 150,
+    probability: 0.1,
+  },
+  {
+    type: "expense",
+    message: "Oops! Your phone screen cracked. Repair cost: $60",
+    amount: 60,
+    probability: 0.15,
+  },
+  {
+    type: "expense",
+    message: "Car maintenance required. Cost: $90",
+    amount: 90,
+    probability: 0.12,
+  },
+  {
+    type: "bonus",
+    message: "Found $35 in your old jacket pocket!",
+    amount: 35,
+    probability: 0.08,
+  },
+  {
+    type: "expense",
+    message: "Parking ticket! You have to pay $30",
+    amount: 30,
+    probability: 0.1,
+  },
+  {
+    type: "bonus",
+    message: "Cashback from your credit card: $25!",
+    amount: 25,
+    probability: 0.15,
+  },
+  {
+    type: "bonus",
+    message: "Your side project earned you $120!",
+    amount: 120,
+    probability: 0.05,
+  },
+  {
+    type: "expense",
+    message: "Medical checkup cost: $45",
+    amount: 45,
+    probability: 0.08,
+  },
+];
+
 function getRandom(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 function playSound(type) {
   let url = "";
-  if (type === "click") url = "/sounds/click.mp3";
-  if (type === "credit") url = "/sounds/credit.mp3";
-  if (type === "debit") url = "/sounds/debit.mp3";
+  if (type === "click") url = "/assets/click.mp3";
+  if (type === "credit") url = "/assets/credit.mp3";
+  if (type === "debit") url = "/assets/debit.mp3";
+  if (type === "gameover") url = "/assets/gameover.mp3";
+  if (type === "win") url = "/assets/win.mp3";
   if (url) {
     const audio = new window.Audio(url);
     audio.volume = 0.5;
@@ -102,6 +171,12 @@ function getTimeParts(timeStr) {
 }
 function pad(n) {
   return n < 10 ? "0" + n : "" + n;
+}
+function formatTime12Hour(timeStr) {
+  const { hour, min } = getTimeParts(timeStr);
+  const period = hour >= 12 ? "PM" : "AM";
+  const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+  return `${hour12}:${pad(min)} ${period}`;
 }
 function addMinutes(timeStr, mins) {
   let { hour, min } = getTimeParts(timeStr);
@@ -152,9 +227,91 @@ export default function Game() {
     age: "",
     gender: "male",
     happiness: INIT_HAPPINESS,
+    fitness: 50,
+    daysPlayed: 0,
+    skillBonus: 0,
   });
   const [weekday, setWeekday] = useState("Wednesday");
   const [timeStr, setTimeStr] = useState("08:30");
+  const [gameStatus, setGameStatus] = useState("playing"); // "playing", "won", "lost"
+
+  // Game mechanics functions
+  const checkWinCondition = (money, happiness) => {
+    if (money >= WIN_MONEY_TARGET && happiness >= WIN_HAPPINESS_TARGET) {
+      setGameStatus("won");
+      playSound("win");
+    }
+  };
+
+  const checkTimeLimit = (daysPlayed) => {
+    if (daysPlayed >= MAX_DAYS_TO_WIN) {
+      setGameStatus("lost");
+      playSound("gameover");
+      setSpeech(
+        `Time's up! You had ${MAX_DAYS_TO_WIN} days to achieve your goals but didn't make it in time.`
+      );
+    }
+  };
+
+  const triggerRandomEvent = () => {
+    const randomChance = Math.random();
+    let cumulativeProbability = 0;
+
+    for (const event of RANDOM_EVENTS) {
+      cumulativeProbability += event.probability;
+      if (randomChance < cumulativeProbability) {
+        return event;
+      }
+    }
+    return null;
+  };
+
+  const updateHappiness = (change) => {
+    setPlayer((prev) => {
+      const newHappiness = Math.max(0, Math.min(100, prev.happiness + change));
+      if (newHappiness <= MIN_HAPPINESS) {
+        setGameStatus("lost");
+        playSound("gameover");
+      } else {
+        checkWinCondition(purse, newHappiness);
+      }
+      return { ...prev, happiness: newHappiness };
+    });
+  };
+
+  const updateFitness = (change) => {
+    setPlayer((prev) => ({
+      ...prev,
+      fitness: Math.max(0, Math.min(100, prev.fitness + change)),
+    }));
+  };
+
+  const payDailyRent = () => {
+    if (purse >= DAILY_RENT) {
+      debitMoney(DAILY_RENT);
+      return `Daily rent paid: $${DAILY_RENT}`;
+    } else {
+      setGameStatus("lost");
+      playSound("gameover");
+      return "You can't afford rent! Game Over!";
+    }
+  };
+
+  const restartGame = () => {
+    setGameStatus("playing");
+    setPurse(INIT_PURSE);
+    setPlayer((prev) => ({
+      ...prev,
+      happiness: INIT_HAPPINESS,
+      fitness: 50,
+      daysPlayed: 0,
+      skillBonus: 0,
+    }));
+    setWeekday("Wednesday");
+    setTimeStr("08:30");
+    setLocation("menu");
+    setSpeech(`Hi ${player.name}, choose a place to go!`);
+  };
 
   // Setup form submit
   function handlePlayerSetup(e) {
@@ -164,6 +321,9 @@ export default function Game() {
       age: playerSetup.age,
       gender: playerSetup.gender,
       happiness: INIT_HAPPINESS,
+      fitness: 50,
+      daysPlayed: 0,
+      skillBonus: 0,
     });
     setPlayerReady(true);
     setSpeech(`Hi ${playerSetup.name}, choose a place to go!`);
@@ -173,13 +333,26 @@ export default function Game() {
     setPurseAnim(type);
     setTimeout(() => setPurseAnim(null), 1000);
   }
+
   function creditMoney(val) {
-    setPurse((p) => p + val);
+    setPurse((p) => {
+      const newAmount = p + val;
+      checkWinCondition(newAmount, player.happiness);
+      return newAmount;
+    });
     animatePurse("credit");
     playSound("credit");
   }
+
   function debitMoney(val) {
-    setPurse((p) => p - val);
+    setPurse((p) => {
+      const newAmount = Math.max(0, p - val);
+      if (newAmount <= BANKRUPTCY_THRESHOLD) {
+        setGameStatus("lost");
+        playSound("gameover");
+      }
+      return newAmount;
+    });
     animatePurse("debit");
     playSound("debit");
   }
@@ -191,7 +364,7 @@ export default function Game() {
         <b>{weekday}</b>
       </span>
       <span>
-        <b>{timeStr} (EST)</b>
+        <b>{formatTime12Hour(timeStr)} (EST)</b>
       </span>
       <span className={`menu-purse${purseAnim ? " purse-" + purseAnim : ""}`}>
         <b>
@@ -203,6 +376,12 @@ export default function Game() {
       </span>
       <span className="menu-happiness">
         <b>😊 {player.happiness}%</b>
+      </span>
+      <span className="menu-fitness">
+        <b>💪 {player.fitness}%</b>
+      </span>
+      <span className="menu-days">
+        <b>📅 Day {player.daysPlayed}</b>
       </span>
     </div>
   );
@@ -225,8 +404,23 @@ export default function Game() {
         // NIGHT: show night quote, set to 22:00
         setTimeout(() => {
           setBubbleVisible(true);
-          setSpeech(getRandom(HOME_QUOTES));
+          const rentMsg = payDailyRent();
+          setSpeech(getRandom(HOME_QUOTES) + "\n" + rentMsg);
           setTimeStr("22:00");
+
+          // Trigger random event
+          const randomEvent = triggerRandomEvent();
+          if (randomEvent) {
+            setTimeout(() => {
+              if (randomEvent.type === "bonus") {
+                creditMoney(randomEvent.amount);
+              } else {
+                debitMoney(randomEvent.amount);
+              }
+              setSpeech(randomEvent.message);
+            }, 1500);
+          }
+
           // After night bubble, fade out, then show morning bubble
           setTimeout(() => {
             setBubbleVisible(false);
@@ -236,7 +430,16 @@ export default function Game() {
               setBubbleVisible(true);
               setSpeech(getRandom(MORNING_QUOTES));
               setWeekday(nextWeekday(weekday));
-              setTimeStr("07:00");
+              setTimeStr("08:30"); // Fixed: Set to 8:30 AM after sleeping
+              setPlayer((prev) => {
+                const newDaysPlayed = prev.daysPlayed + 1;
+                checkTimeLimit(newDaysPlayed); // Check if time limit exceeded
+                return {
+                  ...prev,
+                  daysPlayed: newDaysPlayed,
+                };
+              });
+
               // After morning bubble, back to menu
               setTimeout(() => {
                 setBubbleVisible(false);
@@ -256,35 +459,225 @@ export default function Game() {
 
       // All other places
       if (id === "work") {
-        bubbleMsg =
-          getRandom(MOTIVATIONAL_QUOTES) + " Today's wages: $500 credited!";
+        let basePay = WORK_PAY;
+        let performanceBonus = 0;
+        let skillBonus = player.skillBonus || 0;
+
+        // Happiness affects performance
+        if (player.happiness > 70) {
+          performanceBonus = 80;
+        } else if (player.happiness > 50) {
+          performanceBonus = 40;
+        }
+
+        // Fitness affects productivity
+        if (player.fitness > 70) {
+          performanceBonus += 30;
+        }
+
+        const totalPay = basePay + performanceBonus + skillBonus;
+
+        let payBreakdown = `💼 ${getRandom(MOTIVATIONAL_QUOTES)}\n\n`;
+        payBreakdown += `Base salary: $${basePay}\n`;
+
+        if (performanceBonus > 0) {
+          payBreakdown += `Performance bonus: $${performanceBonus}\n`;
+        }
+        if (skillBonus > 0) {
+          payBreakdown += `Skill bonus: $${skillBonus}\n`;
+          // Reset skill bonus after using it
+          setPlayer((prev) => ({ ...prev, skillBonus: 0 }));
+        }
+
+        payBreakdown += `\n💰 Total earned: $${totalPay}`;
+
+        // Add strategic hints
+        if (player.happiness < 50) {
+          payBreakdown += `\n\n💡 Tip: Higher happiness = better performance!`;
+        }
+        if (player.fitness < 50) {
+          payBreakdown += `\n\n💡 Tip: Stay fit for productivity bonuses!`;
+        }
+
+        bubbleMsg = payBreakdown;
+
         updateFn = () => {
-          creditMoney(WORK_PAY);
+          creditMoney(totalPay);
+          updateHappiness(-3); // Reduced work stress
           setTimeStr("18:00");
         };
       } else if (id === "gym") {
-        const gasCost = getRandom([4, 5, 6]);
-        const gymFee = getRandom([10, 12, 15, 18, 20]);
-        bubbleMsg = `${getRandom(MOTIVATIONAL_QUOTES)} (${getRandom(
-          EXERCISE_DAYS
-        )})\nGas: $${gasCost}, Gym: $${gymFee}`;
+        const gasCost = getRandom([3, 4, 5]);
+        const gymFee = getRandom([8, 10, 12, 15]);
+        const fitnessGain = getRandom([10, 12, 15, 18]);
+        bubbleMsg =
+          `💪 ${getRandom(MOTIVATIONAL_QUOTES)} (${getRandom(
+            EXERCISE_DAYS
+          )})\n\n` +
+          `🚗 Gas: $${gasCost}\n` +
+          `🏋️ Gym fee: $${gymFee}\n` +
+          `💪 Fitness increased by ${fitnessGain}%!\n` +
+          `😊 Feeling great after workout!`;
         updateFn = () => {
           debitMoney(gasCost);
           debitMoney(gymFee);
+          updateHappiness(12); // Exercise makes you happy
+          updateFitness(fitnessGain);
           setTimeStr(addMinutes(timeStr, 90));
         };
       } else if (id === "pub") {
-        const pubCost = getRandom([20, 25, 30, 35, 40]);
-        bubbleMsg = "Enjoying the night at the pub with friends.";
+        const pubCost = getRandom([15, 20, 25, 30]);
+        const happinessGain = getRandom([18, 22, 28]);
+        bubbleMsg =
+          `🍻 Enjoying the night at the pub with friends!\n\n` +
+          `💰 Cost: $${pubCost}\n` +
+          `😊 Happiness increased by ${happinessGain}%!\n` +
+          `🎉 Great way to unwind and socialize!`;
         updateFn = () => {
           debitMoney(pubCost);
+          updateHappiness(happinessGain);
+          updateFitness(-3); // Reduced fitness loss
           setTimeStr(addMinutes(timeStr, 120));
         };
       } else if (id === "cn-tower") {
-        bubbleMsg = "Exploring CN Tower! The city looks amazing from up here.";
+        const happinessGain = getRandom([15, 18, 22]);
+        bubbleMsg =
+          `🗼 Exploring CN Tower! The city looks amazing from up here.\n\n` +
+          `🎫 Entry fee: $25\n` +
+          `😊 Happiness increased by ${happinessGain}%!\n` +
+          `📸 Such breathtaking views of Toronto!`;
         updateFn = () => {
-          debitMoney(30);
+          debitMoney(25); // Reduced from 30
+          updateHappiness(happinessGain);
           setTimeStr(addMinutes(timeStr, 60));
+        };
+      } else if (id === "mall") {
+        // Enhanced Shopping Mall with strategic choices
+        const shoppingOptions = [
+          {
+            category: "Essential Items",
+            items: [
+              {
+                name: "Groceries & Food",
+                cost: 45,
+                happiness: 8,
+                description: "Weekly essentials",
+              },
+              {
+                name: "Personal Care",
+                cost: 25,
+                happiness: 5,
+                description: "Hygiene products",
+              },
+              {
+                name: "Home Supplies",
+                cost: 35,
+                happiness: 6,
+                description: "Cleaning & utilities",
+              },
+            ],
+          },
+          {
+            category: "Lifestyle & Fashion",
+            items: [
+              {
+                name: "Trendy Outfit",
+                cost: 85,
+                happiness: 18,
+                description: "Boost your confidence",
+              },
+              {
+                name: "Designer Accessories",
+                cost: 120,
+                happiness: 22,
+                description: "Premium style items",
+              },
+              {
+                name: "Seasonal Wardrobe",
+                cost: 65,
+                happiness: 15,
+                description: "Weather-appropriate clothes",
+              },
+            ],
+          },
+          {
+            category: "Tech & Entertainment",
+            items: [
+              {
+                name: "Smartphone Upgrade",
+                cost: 180,
+                happiness: 25,
+                description: "Latest tech features",
+              },
+              {
+                name: "Gaming Console",
+                cost: 250,
+                happiness: 35,
+                description: "Entertainment system",
+              },
+              {
+                name: "Wireless Earbuds",
+                cost: 95,
+                happiness: 16,
+                description: "Premium audio experience",
+              },
+            ],
+          },
+          {
+            category: "Investment Items",
+            items: [
+              {
+                name: "Online Course",
+                cost: 75,
+                happiness: 12,
+                description: "Skill development (may increase work bonus)",
+              },
+              {
+                name: "Business Books",
+                cost: 40,
+                happiness: 8,
+                description: "Financial knowledge",
+              },
+              {
+                name: "Networking Event Ticket",
+                cost: 55,
+                happiness: 10,
+                description: "Career opportunities",
+              },
+            ],
+          },
+        ];
+
+        const selectedCategory = getRandom(shoppingOptions);
+        const selectedItem = getRandom(selectedCategory.items);
+
+        // Add some randomness to prices (±20%)
+        const priceVariation = 0.8 + Math.random() * 0.4; // 0.8 to 1.2
+        const finalCost = Math.round(selectedItem.cost * priceVariation);
+
+        bubbleMsg =
+          `🛍️ Welcome to ${selectedCategory.category}!\n\n` +
+          `You found: ${selectedItem.name}\n` +
+          `${selectedItem.description}\n` +
+          `💰 Cost: $${finalCost}\n` +
+          `😊 Happiness: +${selectedItem.happiness}%`;
+
+        updateFn = () => {
+          debitMoney(finalCost);
+          updateHappiness(selectedItem.happiness);
+
+          // Special bonus for investment items - chance to increase future work performance
+          if (
+            selectedCategory.category === "Investment Items" &&
+            Math.random() < 0.3
+          ) {
+            setPlayer((prev) => ({
+              ...prev,
+              skillBonus: (prev.skillBonus || 0) + 50, // Will be used in work calculations
+            }));
+          }
+
+          setTimeStr(addMinutes(timeStr, 90)); // Shopping takes time
         };
       }
 
@@ -313,151 +706,288 @@ export default function Game() {
 
   const { hour } = getTimeParts(timeStr);
 
+  // --- Game Over/Win Screens ---
+  if (gameStatus === "won") {
+    return (
+      <div className="game-end-screen">
+        <div className="game-end-content">
+          <h1 className="game-end-title">🎉 CONGRATULATIONS! 🎉</h1>
+          <p className="game-end-message">
+            You've successfully achieved financial stability and happiness!
+          </p>
+          <div className="game-end-stats">
+            <p>💰 Final Money: ${purse}</p>
+            <p>😊 Final Happiness: {player.happiness}%</p>
+            <p>💪 Final Fitness: {player.fitness}%</p>
+            <p>📅 Days Played: {player.daysPlayed}</p>
+          </div>
+          <button className="game-end-button" onClick={restartGame}>
+            Play Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (gameStatus === "lost") {
+    let lossReason = "";
+    if (purse <= BANKRUPTCY_THRESHOLD) {
+      lossReason = "You ran out of money and couldn't pay your bills!";
+    } else if (player.happiness <= MIN_HAPPINESS) {
+      lossReason = "Your happiness dropped to zero. Life became unbearable.";
+    } else if (player.daysPlayed >= MAX_DAYS_TO_WIN) {
+      lossReason = `Time's up! You had ${MAX_DAYS_TO_WIN} days to reach your goals.`;
+    } else {
+      lossReason = "Game over!";
+    }
+
+    return (
+      <div className="game-end-screen game-over">
+        <div className="game-end-content">
+          <h1 className="game-end-title">💸 GAME OVER 💸</h1>
+          <p className="game-end-message">{lossReason}</p>
+
+          {/* Strategic advice based on how they lost */}
+          <div className="game-advice">
+            {purse <= BANKRUPTCY_THRESHOLD && (
+              <p>
+                💡 Next time: Balance spending with earning. Work more when
+                happy!
+              </p>
+            )}
+            {player.happiness <= MIN_HAPPINESS && (
+              <p>
+                💡 Next time: Maintain happiness by visiting fun places and
+                avoiding overwork!
+              </p>
+            )}
+            {player.daysPlayed >= MAX_DAYS_TO_WIN && (
+              <p>
+                💡 Next time: Focus on high-paying work when fit & happy. Invest
+                in skills!
+              </p>
+            )}
+          </div>
+
+          <div className="game-end-stats">
+            <p>
+              💰 Final Money: ${purse} (Goal: ${WIN_MONEY_TARGET})
+            </p>
+            <p>
+              😊 Final Happiness: {player.happiness}% (Goal:{" "}
+              {WIN_HAPPINESS_TARGET}%)
+            </p>
+            <p>💪 Final Fitness: {player.fitness}%</p>
+            <p>
+              📅 Days Survived: {player.daysPlayed}/{MAX_DAYS_TO_WIN}
+            </p>
+          </div>
+          <button className="game-end-button" onClick={restartGame}>
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // --- Player Setup Form (before menu) ---
   if (!playerReady) {
     return (
-      <div className="player-setup-bg">
+      <div className="modern-setup-container">
+        <div className="setup-bg-overlay"></div>
         <img
           src="/buildings/game.jpg"
           alt="Background"
-          className="player-setup-bgimg"
+          className="setup-bg-image"
         />
-        <form
-          className="player-setup-form transparent"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (
-              playerSetup.name.trim().length > 0 &&
-              playerSetup.age &&
-              Number(playerSetup.age) > 18 &&
-              playerSetup.gender
-            ) {
-              handlePlayerSetup(e);
-            }
-          }}
-          autoComplete="off"
-        >
-          <h2 className="player-setup-title">
-            Welcome, to FinSim....save money live better!!!!
-          </h2>
-          <label className="player-setup-label">
-            Name:
-            <input
-              required
-              className="player-setup-input"
-              value={playerSetup.name}
-              onChange={(e) =>
-                setPlayerSetup((s) => ({ ...s, name: e.target.value }))
-              }
-              placeholder="Enter your name"
-              autoFocus
-            />
-          </label>
-          <label className="player-setup-label">
-            Age:
-            <input
-              required
-              className="player-setup-input"
-              type="number"
-              min={19}
-              value={playerSetup.age}
-              onBlur={(e) =>
-                setPlayerSetup((s) => ({ ...s, ageTouched: true }))
-              }
-              onChange={(e) =>
-                setPlayerSetup((s) => ({
-                  ...s,
-                  age: e.target.value.replace(/[^0-9]/g, ""),
-                }))
-              }
-              placeholder="Must be above 18"
-            />
-            {playerSetup.ageTouched &&
-              playerSetup.age &&
-              Number(playerSetup.age) <= 18 && (
-                <span className="player-setup-age-error">
-                  Age must be strictly above 18.
-                </span>
-              )}
-          </label>
-          <div className="player-setup-label" style={{ marginBottom: 8 }}>
-            Gender:
-            <div className="player-setup-gender-row">
-              <div
-                className={`player-setup-gender-block${
-                  playerSetup.gender === "male" ? " selected" : ""
-                }`}
-                onClick={() =>
-                  setPlayerSetup((s) => ({ ...s, gender: "male" }))
-                }
-                tabIndex={0}
-                role="button"
-                aria-label="Male"
-              >
-                <img
-                  src="/assets/char-male.png"
-                  alt="Male"
-                  className="player-setup-gender-img"
-                />
-                <span className="player-setup-gender-label">Male</span>
-              </div>
-              <div
-                className={`player-setup-gender-block${
-                  playerSetup.gender === "female" ? " selected" : ""
-                }`}
-                onClick={() =>
-                  setPlayerSetup((s) => ({ ...s, gender: "female" }))
-                }
-                tabIndex={0}
-                role="button"
-                aria-label="Female"
-              >
-                <img
-                  src="/assets/char-female.png"
-                  alt="Female"
-                  className="player-setup-gender-img"
-                />
-                <span className="player-setup-gender-label">Female</span>
-              </div>
-              <div
-                className={`player-setup-gender-block${
-                  playerSetup.gender === "other" ? " selected" : ""
-                }`}
-                onClick={() =>
-                  setPlayerSetup((s) => ({ ...s, gender: "other" }))
-                }
-                tabIndex={0}
-                role="button"
-                aria-label="Other"
-              >
-                <img
-                  src="/assets/char-other.png"
-                  alt="Other"
-                  className="player-setup-gender-img"
-                />
-                <span className="player-setup-gender-label">Other</span>
-              </div>
+
+        {/* Animated Background Elements */}
+        <div className="floating-elements">
+          <div className="floating-icon floating-money">💰</div>
+          <div className="floating-icon floating-chart">📈</div>
+          <div className="floating-icon floating-house">🏠</div>
+          <div className="floating-icon floating-car">🚗</div>
+          <div className="floating-icon floating-target">🎯</div>
+        </div>
+
+        <div className="setup-content">
+          {/* Header Section */}
+          <div className="setup-header">
+            <div className="logo-container">
+              <div className="logo-icon">💎</div>
+              <h1 className="game-title">
+                <span className="title-fin">Fin</span>
+                <span className="title-sim">Sim</span>
+              </h1>
+            </div>
+            <p className="game-tagline">Master Your Financial Future</p>
+            <div className="tagline-subtext">
+              💰 Save Smart • 📊 Invest Wisely • 🎯 Live Better
             </div>
           </div>
-          <button
-            type="submit"
-            className="player-setup-btn"
-            disabled={
-              !(
+
+          {/* Form Section */}
+          <form
+            className="modern-setup-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (
                 playerSetup.name.trim().length > 0 &&
                 playerSetup.age &&
                 Number(playerSetup.age) > 18 &&
                 playerSetup.gender
-              )
-            }
+              ) {
+                handlePlayerSetup(e);
+              }
+            }}
+            autoComplete="off"
           >
-            Start Game
-          </button>
-          <link
-            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Montserrat:wght@400;700&display=swap"
-            rel="stylesheet"
-          />
-        </form>
+            {/* Name Input */}
+            <div className="input-group">
+              <div className="input-icon">👤</div>
+              <div className="input-container">
+                <input
+                  required
+                  className="modern-input"
+                  value={playerSetup.name}
+                  onChange={(e) =>
+                    setPlayerSetup((s) => ({ ...s, name: e.target.value }))
+                  }
+                  placeholder="Enter your name"
+                  autoFocus
+                />
+                <label className="floating-label">Your Name</label>
+              </div>
+            </div>
+
+            {/* Age Input */}
+            <div className="input-group">
+              <div className="input-icon">🎂</div>
+              <div className="input-container">
+                <input
+                  required
+                  className="modern-input"
+                  type="number"
+                  min={19}
+                  value={playerSetup.age}
+                  onBlur={(e) =>
+                    setPlayerSetup((s) => ({ ...s, ageTouched: true }))
+                  }
+                  onChange={(e) =>
+                    setPlayerSetup((s) => ({
+                      ...s,
+                      age: e.target.value.replace(/[^0-9]/g, ""),
+                    }))
+                  }
+                  placeholder="Your age"
+                />
+                <label className="floating-label">Age (18+)</label>
+                {playerSetup.ageTouched &&
+                  playerSetup.age &&
+                  Number(playerSetup.age) <= 18 && (
+                    <div className="error-message">
+                      <span className="error-icon">⚠️</span>
+                      Age must be above 18 to play
+                    </div>
+                  )}
+              </div>
+            </div>
+
+            {/* Gender Selection */}
+            <div className="gender-section">
+              <h3 className="section-title">Choose Your Avatar</h3>
+              <div className="gender-options">
+                <div
+                  className={`gender-card ${
+                    playerSetup.gender === "male" ? "selected" : ""
+                  }`}
+                  onClick={() =>
+                    setPlayerSetup((s) => ({ ...s, gender: "male" }))
+                  }
+                  tabIndex={0}
+                  role="button"
+                  aria-label="Male Avatar"
+                >
+                  <div className="avatar-container">
+                    <img
+                      src="/assets/char-male.png"
+                      alt="Male Avatar"
+                      className="avatar-image"
+                    />
+                    <div className="avatar-glow"></div>
+                  </div>
+                  <span className="avatar-label">Male</span>
+                  <div className="selection-indicator">✓</div>
+                </div>
+
+                <div
+                  className={`gender-card ${
+                    playerSetup.gender === "female" ? "selected" : ""
+                  }`}
+                  onClick={() =>
+                    setPlayerSetup((s) => ({ ...s, gender: "female" }))
+                  }
+                  tabIndex={0}
+                  role="button"
+                  aria-label="Female Avatar"
+                >
+                  <div className="avatar-container">
+                    <img
+                      src="/assets/char-female.png"
+                      alt="Female Avatar"
+                      className="avatar-image"
+                    />
+                    <div className="avatar-glow"></div>
+                  </div>
+                  <span className="avatar-label">Female</span>
+                  <div className="selection-indicator">✓</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Start Button */}
+            <button
+              type="submit"
+              className={`start-game-btn ${
+                playerSetup.name.trim().length > 0 &&
+                playerSetup.age &&
+                Number(playerSetup.age) > 18 &&
+                playerSetup.gender
+                  ? "ready"
+                  : "disabled"
+              }`}
+              disabled={
+                !(
+                  playerSetup.name.trim().length > 0 &&
+                  playerSetup.age &&
+                  Number(playerSetup.age) > 18 &&
+                  playerSetup.gender
+                )
+              }
+            >
+              <span className="btn-text">Start Your Journey</span>
+              <span className="btn-icon">🚀</span>
+            </button>
+          </form>
+
+          {/* Footer */}
+          <div className="setup-footer">
+            <div className="feature-highlights">
+              <div className="feature">
+                <span className="feature-icon">🎮</span>
+                <span>Interactive Gameplay</span>
+              </div>
+              <div className="feature">
+                <span className="feature-icon">📊</span>
+                <span>Real-world Scenarios</span>
+              </div>
+              <div className="feature">
+                <span className="feature-icon">🏆</span>
+                <span>Achievement System</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -489,6 +1019,15 @@ export default function Game() {
             <div className="player-name">{player.name}</div>
             <div>Age: {player.age}</div>
             <div>Character: {player.gender}</div>
+            <div className="player-goal">
+              🎯 Goal: ${WIN_MONEY_TARGET} & {WIN_HAPPINESS_TARGET}% happiness
+            </div>
+            <div className="player-progress">
+              ⏰ Time limit: {MAX_DAYS_TO_WIN - player.daysPlayed} days left
+            </div>
+            <div className="player-strategy">
+              💡 Strategy: Work when happy & fit for max pay!
+            </div>
           </div>
         </div>
         {PLACES.map((item) => (
